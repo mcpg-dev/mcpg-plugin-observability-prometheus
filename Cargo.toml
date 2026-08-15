@@ -1,0 +1,36 @@
+[package]
+name = "mcpg-plugin-observability-prometheus"
+version = "0.1.0-alpha.15"
+license = "Apache-2.0"
+edition = "2024"
+description = "MetricsSink plugin (`dev.mcpg.observability.prometheus`) — accumulates MetricPoint events and renders Prometheus text-exposition format on demand"
+
+[lib]
+# cdylib: produces the .so/.dylib the gateway's native_loader opens
+# via `libloading`. rlib: keeps in-tree unit tests on the plugin's
+# internal helpers building without a dylib.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mcpg-plugin-protocol = { git = "https://github.com/mcpg-dev/mcpg-plugin-protocol", tag = "v0.1.0-beta.13", version = "=0.1.0-beta.13" }
+mcpg-plugin-sdk = { git = "https://github.com/mcpg-dev/mcpg-plugin-sdk", tag = "v0.1.0-beta.13", version = "=0.1.0-beta.13" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[features]
+# Default OFF so the workspace build (which includes the gateway as a
+# bin) does not link multiple plugin rlibs all exporting
+# `mcpg_plugin_register` — a linker collision. Standalone cdylib
+# builds (CI smoke, OCI publish) opt in via `--features cdylib-export`
+# to produce a `.so` with the extern entry-point.
+default = []
+cdylib-export = []
+# Declared so the SDK's `declare_metrics_sink_plugin!` `build_static`
+# accessor (gated `#[cfg(feature = "static-firstparty")]`) does not
+# trigger `unexpected_cfgs` in consumer compilation. Empty: this plugin
+# is consumed as a cdylib, not via the static-firstparty fast path.
+static-firstparty = []

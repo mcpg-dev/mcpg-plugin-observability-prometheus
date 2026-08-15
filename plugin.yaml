@@ -1,0 +1,23 @@
+schema: mcpg.dev/plugin/v1
+id: dev.mcpg.observability.prometheus
+name: Prometheus Metrics Exporter
+license: Apache-2.0
+description: |
+  Pure metrics sink: accumulates `MetricPoint` events emitted by the
+  gateway's metrics pipeline (Phase 6c-20 onward) into an in-memory
+  registry keyed by `(name, labels)`. Renders the registry in
+  Prometheus text-exposition format on demand for scrape consumers.
+
+  Operators wire this plugin via:
+    observability:
+      metrics:
+        sinks:
+          - kind: dev.mcpg.observability.prometheus
+            config:
+              namespace: mcpg          # optional metric-name prefix
+              global_labels:           # added to every series
+                env: production
+class: metrics_sink
+runtime: native-cdylib-v1
+protocol_version: "1.0"
+required_capabilities: []
