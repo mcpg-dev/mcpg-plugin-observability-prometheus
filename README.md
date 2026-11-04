@@ -9,8 +9,8 @@ text-exposition v0.0.4 format whenever a scrape asks for it. It is a
 self-contained accumulator rather than a wrapper around a global recorder, so
 several metrics sinks can run in parallel and each gateway instance exposes its
 own numbers. Reach for it whenever a Prometheus-compatible scraper should read
-gateway metrics — it is the default metrics sink, so a factory-fresh gateway
-already serves `/metrics` without any configuration.
+gateway metrics; a gateway serves `/metrics` only once this plugin is loaded
+and listed as a metrics sink.
 
 ## What it does
 - Accumulates counters (sum), gauges (last value wins), and histograms (count
@@ -31,11 +31,13 @@ already serves `/metrics` without any configuration.
   gateway's own HTTP listener serves the rendered text.
 
 ## Configuration
-Referenced by id from the dedicated `observability.metrics.sinks[]` list — not
-from the `plugins:` list. The plugin is compiled into the gateway binary and
-registers itself when its id appears in that list and the metrics signal is on.
-It is the default entry in that list, so this block is only needed to change its
-settings or to run it alongside other sinks.
+The plugin is a cdylib that the gateway image does not carry. A `plugins:` row
+loads it, from `source.oci` (fetched and verified at boot) or from
+`source.path` (for example the package that `mcpg plugin pull` writes, copied
+into an image built on top of the gateway image; the gateway checks the
+signature it carries). The
+`observability.metrics.sinks[]` entry whose `kind` is the plugin id turns the
+sink on; the metrics sink list is empty by default.
 
 ```yaml
 observability:
@@ -45,11 +47,20 @@ observability:
     sinks:
       - kind: dev.mcpg.observability.prometheus
         config:
+          path: /metrics           # the gateway's scrape route; not passed to the plugin
           namespace: mcpg          # optional metric-name prefix
           global_labels:           # added to every series
             env: production
             region: us-east-1
+plugins:
+  - id: dev.mcpg.observability.prometheus
+    class: metrics_sink
+    source: { oci: "ghcr.io/mcpg-dev/plugins/observability-prometheus:protocol-1" }
 ```
+
+The sink's `config:` is the plugin's config. Write it there or on the
+`plugins:` row, not in both places with different values: the gateway refuses
+to start then.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -60,11 +71,13 @@ Unknown fields are rejected. A `config:` block that is present but does not
 parse refuses the plugin at boot rather than silently reverting to defaults; an
 absent or empty block yields the defaults above.
 
-The gateway mounts the scrape route at `/metrics` while the metrics signal is on
-— both `observability.enabled` and `observability.metrics.enabled` — and the
-handler renders straight from this plugin. If the plugin is not registered, that
-route answers `503` rather than an empty body, so a misconfiguration is visible
-to the scraper.
+The gateway mounts the scrape route (`path`, default `/metrics`) while a sink of
+this kind is listed and the metrics signal is on — both
+`observability.enabled` and `observability.metrics.enabled` — and the handler
+renders straight from this plugin. Without such a sink the route does not exist
+(404). If the sink is listed but the plugin is not registered, the route
+answers `503` rather than an empty body, so a misconfiguration is visible to
+the scraper.
 
 ## Histogram rendering
 Histograms are rendered as `<name>_count` and `<name>_sum` only. The plugin
