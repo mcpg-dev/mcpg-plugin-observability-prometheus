@@ -235,11 +235,20 @@ impl PrometheusSink {
 
     /// Apply operator config: prefix the metric name with the
     /// namespace + merge global labels into the per-sample labels.
+    /// A name that already starts with `<namespace>_` is kept: the
+    /// gateway's own series are `mcpg_*`, and `namespace: mcpg` must not
+    /// make them `mcpg_mcpg_*`.
     fn project(&self, metric: &MetricPoint) -> (String, BTreeMap<String, String>) {
-        let name = if self.config.namespace.is_empty() {
+        let ns = &self.config.namespace;
+        let name = if ns.is_empty()
+            || metric
+                .name
+                .strip_prefix(ns.as_str())
+                .is_some_and(|rest| rest.starts_with('_'))
+        {
             metric.name.clone()
         } else {
-            format!("{}_{}", self.config.namespace, metric.name)
+            format!("{ns}_{}", metric.name)
         };
         let mut labels = self.config.global_labels.clone();
         for (k, v) in &metric.labels {
@@ -647,6 +656,23 @@ mod tests {
         assert!(
             out.contains("mcpg_requests_total 1"),
             "namespace should be prepended; got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn namespace_is_not_prepended_twice() {
+        let sink = PrometheusSink::with_config(PrometheusSinkConfig {
+            namespace: "mcpg".into(),
+            global_labels: BTreeMap::new(),
+        });
+        sink.emit(&point_counter("mcpg_license_info", &[], 1));
+        sink.emit(&point_counter("mcpgx_total", &[], 1));
+        let out = sink.render();
+        assert!(out.contains("mcpg_license_info 1"), "got:\n{out}");
+        assert!(!out.contains("mcpg_mcpg_"), "got:\n{out}");
+        assert!(
+            out.contains("mcpg_mcpgx_total 1"),
+            "a name that only shares the letters is still prefixed; got:\n{out}"
         );
     }
 
